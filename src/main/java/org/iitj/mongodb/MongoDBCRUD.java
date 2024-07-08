@@ -1,24 +1,28 @@
 package org.iitj.mongodb;
 
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.FindIterable;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
-import org.bson.Document;
+import static com.mongodb.client.model.Accumulators.sum;
+import static com.mongodb.client.model.Aggregates.group;
+import static com.mongodb.client.model.Aggregates.limit;
+import static com.mongodb.client.model.Aggregates.lookup;
+import static com.mongodb.client.model.Aggregates.project;
+import static com.mongodb.client.model.Aggregates.sort;
+import static com.mongodb.client.model.Aggregates.unwind;
+import static com.mongodb.client.model.Sorts.descending;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.ArrayList;
 
-import static com.mongodb.client.model.Aggregates.*;
-import static com.mongodb.client.model.Filters.*;
-import static com.mongodb.client.model.Accumulators.*;
-import static com.mongodb.client.model.Sorts.*;
+import org.bson.Document;
+
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
 
 public class MongoDBCRUD {
 
@@ -177,39 +181,49 @@ public class MongoDBCRUD {
 	}
 
 	// Method to get top 5 customers based on total order amount
-	public static MongoCursor<Document> query4() {
+	public static void query4() {
 		System.out.println("\nExecuting query 4:");
 		MongoCollection<Document> customers = database.getCollection("customers");
 		MongoCollection<Document> orders = database.getCollection("orders");
+		MongoCursor<Document> cursor = null;
+		try {
+			cursor = orders.aggregate(Arrays.asList(
+					project(new Document("o_custkey", 1).append("o_totalprice",
+							new Document("$toDouble", "$o_totalprice"))),
+					group("$o_custkey", sum("totalAmount", "$o_totalprice")),
+					lookup("customers", "_id", "c_custkey", "customerDetails"), sort(descending("totalAmount")),
+					limit(5))).iterator();
+			System.out.println(toString(cursor));
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			if (cursor != null)
+				cursor.close();
+		}
 
-		MongoCursor<Document> cursor = orders
-				.aggregate(Arrays.asList(
-						project(new Document("o_custkey", 1).append("o_totalprice",
-								new Document("$toDouble", "$o_totalprice"))),
-						group("$o_custkey", sum("totalAmount", "$o_totalprice")),
-						lookup("customers", "_id", "c_custkey", "customerDetails"), sort(descending("totalAmount")),
-						limit(5)))
-				.iterator();
-		System.out.println(toString(cursor));
-		return cursor;
 	}
 
 	// Method to get top 5 customers based on total order amount using nested
 	// collection
-	public static MongoCursor<Document> query4Nest() {
+	public static void query4Nest() {
 		System.out.println("\nExecuting query 4 nested:");
 		MongoCollection<Document> col = database.getCollection("custorders");
+		MongoCursor<Document> cursor = null;
+		try {
 
-		MongoCursor<Document> cursor = col
-				.aggregate(Arrays.asList(unwind("$orders"),
-						project(new Document("c_custkey", 1).append("o_totalprice",
-								new Document("$toDouble", "$orders.o_totalprice"))),
-						group("$c_custkey", sum("totalAmount", "$o_totalprice")),
-						lookup("customers", "_id", "c_custkey", "customerDetails"), sort(descending("totalAmount")),
-						limit(5)))
-				.iterator();
-		System.out.println(toString(cursor));
-		return cursor;
+			cursor = col.aggregate(Arrays.asList(unwind("$orders"),
+					project(new Document("c_custkey", 1).append("o_totalprice",
+							new Document("$toDouble", "$orders.o_totalprice"))),
+					group("$c_custkey", sum("totalAmount", "$o_totalprice")),
+					lookup("customers", "_id", "c_custkey", "customerDetails"), sort(descending("totalAmount")),
+					limit(5))).iterator();
+			System.out.println(toString(cursor));
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			if (cursor != null)
+				cursor.close();
+		}
 	}
 
 	// Helper method to print MongoCursor results
@@ -224,7 +238,6 @@ public class MongoDBCRUD {
 				buf.append("\n");
 				count++;
 			}
-			cursor.close();
 		}
 		buf.append("Number of rows: " + count);
 		return buf.toString();
